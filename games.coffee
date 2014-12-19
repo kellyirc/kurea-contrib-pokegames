@@ -27,13 +27,14 @@ fixPokemonName = (name) ->
 	name.replace /\-.+/g, ''
 
 class exports.Game
-	constructor: (@module, @origin) ->
+	constructor: (@module, @origin, @originStr, @params) ->
 
 	start: (a...) ->
 		@onStart? a...
 
 	stop: (a...) ->
 		@onStop? a...
+		@module.gameStopped @
 
 	say: (msg) ->
 		@module.reply @origin, msg
@@ -44,6 +45,7 @@ class exports.GuessPokemonGame extends exports.Game
 	questionTimeout: 12 * 1000
 	nextQuestionDelay: 3 * 1000
 	hintCount: 3
+	maxRounds: Infinity
 
 	hints:
 		hard: asArray
@@ -64,12 +66,31 @@ class exports.GuessPokemonGame extends exports.Game
 		super
 		@chance = new Chance
 		@stopped = no
+		@currentRound = 0
+
+		for key, value of @params
+			switch key
+				when 'hints'
+					@hintCount = Number value
+
+				when 'rounds'
+					if value in ['infinite', 'infinity', 'unlimited']
+						@maxRounds = Infinity
+
+					else @maxRounds = Number value
+
+				when 'hint-interval'
+					@questionTimeout = (Number value) * 1000
+
+				when 'next-question-delay'
+					@nextQuestionDelay = (Number value) * 1000
 
 	onStart: ->
 		@startQuestion()
 
 	onStop: ->
-		@stopCurrentQuestion null, yes
+		@stopped = yes
+		@stopCurrentQuestion()
 
 	assertNotStopped: (pkmn) ->
 		if @stopped or (pkmn? and pkmn isnt @currentPkmn)
@@ -81,11 +102,11 @@ class exports.GuessPokemonGame extends exports.Game
 		Q.fcall =>
 			@assertNotStopped()
 
-			@say 'Ready yourselves! Getting next Pokemon...'
+			@currentRound++
+
+			@say irc.green 'Getting next Pokemon...'
 
 			id = @chance.natural max: @pokemonCount-1
-
-			console.log 'Fecthing Pokemon...'
 
 			PokemonDb.pokemon {id}
 		
@@ -94,8 +115,6 @@ class exports.GuessPokemonGame extends exports.Game
 
 			@currentPkmn.name = fixPokemonName @currentPkmn.name
 			descObj = @chance.pick currentPkmn.descriptions
-
-			console.log 'Fetching Pokedex description of Pokemon...'
 
 			PokemonDb.get descObj.resource_uri
 
@@ -130,14 +149,13 @@ class exports.GuessPokemonGame extends exports.Game
 			.then =>
 				@assertNotStopped pkmn
 
-				@stopCurrentQuestion null
+				@correctAnswer null
 
 		.fail (err) =>
 			if not err.stopped?
 				console.error err.stack
 				@say "Looks like there was an error! #{irc.red.bold err.toString()}"
-
-			else console.log "Full stop. #{err}"
+				@stop()
 
 	dropHint: (difficulty = 'hard') ->
 		loop
@@ -190,30 +208,27 @@ class exports.GuessPokemonGame extends exports.Game
 
 			break
 
-	stopCurrentQuestion: (answeredBy, halt = no) ->
-		console.log '***** Question stopped!'
-
-		if @currentPkmn?
-			if answeredBy?
-				@say "#{irc.bold answeredBy.user} got the right answer! It was #{irc.bold @currentPkmn.name}!"
-
-				console.log "Answered by #{answeredBy.user}"
-
-			else
-				@say "#{irc.red.bold "Time's up!"} It was #{irc.bold @currentPkmn.name}!"
-
-				console.log 'No one answered.'
-
+	stopCurrentQuestion: ->
 		@currentPkmn = null
 
-		if not halt
-			Q.delay @nextQuestionDelay
-			.then => @startQuestion()
+	correctAnswer: (answeredBy) ->
+		if answeredBy?
+			console.log "Answered by #{answeredBy.user}"
+			@say "#{irc.bold answeredBy.user} got the right answer! It was #{irc.bold @currentPkmn.name}!"
 
 		else
+			console.log 'No one answered.'
+			@say "#{irc.red.bold "Time's up!"} It was #{irc.bold @currentPkmn.name}!"
+
+		@stopCurrentQuestion()
+
+		if @currentRound >= @maxRounds
 			@say 'Game has been stopped.'
-			console.log 'HALTED!!!!!!!!!!!!!!'
-			@stopped = yes
+			console.log 'Halted game.'
+			@stop()
+
+		Q.delay @nextQuestionDelay
+		.then => @startQuestion()
 
 	redactPokemonName: (pkmn, text) ->
 		text.replace (new RegExp pkmn.name, 'ig'), '[REDACTED]'
@@ -227,4 +242,8 @@ class exports.GuessPokemonGame extends exports.Game
 			.toLowerCase()
 
 		if (normalize message) is (normalize @currentPkmn.name)
-			@stopCurrentQuestion origin
+			@correctAnswer origin
+
+exports.gameTypes =
+	'whos-that-pokemon': exports.GuessPokemonGame
+	'guess-pokemon': exports.GuessPokemonGame

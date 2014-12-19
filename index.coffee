@@ -1,5 +1,14 @@
 module.exports = (Module) ->
-	{GuessPokemonGame} = require './games'
+	games = require './games'
+
+	convertParamsToObj = (params) ->
+		pattern = /(\S+)\s*=\s*(\S+)/g
+		o = {}
+
+		while (match = pattern.exec params)?
+			o[match[1]] = match[2]
+
+		o
 
 	class PokegamesModule extends Module
 		shortName: 'Pokegames'
@@ -13,18 +22,29 @@ module.exports = (Module) ->
 
 			@games = {}
 
-			@addRoute 'pokegames start *', (origin, route) =>
+			startGame = (origin, route) =>
 				return if not origin.channel?
 
-				[mode] = route.splats
+				{mode} = route.params
+				[params] = route.splats
+
 				originStr = @originString origin
 
 				if @games[originStr]?
 					@reply origin, 'There is already a game going on in here!'
 					return
 
-				@games[originStr] = game = new GuessPokemonGame @, origin
+				GameClazz = games.gameTypes[mode]
+				if not GameClazz?
+					@reply origin, "Unknown game mode: '#{mode}'"
+					return
+
+				@games[originStr] = game = new GameClazz @, origin, originStr, convertParamsToObj params
+
 				game.start()
+
+			@addRoute 'pokegames start :mode *', startGame
+			@addRoute 'pokegames start :mode', startGame
 
 			@addRoute 'pokegames stop', (origin, route) =>
 				return if not origin.channel?
@@ -32,7 +52,6 @@ module.exports = (Module) ->
 				originStr = @originString origin
 
 				@games[originStr].stop()
-				delete @games[originStr]
 
 			@on 'message', (bot, user, channel, message) =>
 				game = @games[@originString {bot, user, channel}]
@@ -42,5 +61,8 @@ module.exports = (Module) ->
 		destroy: ->
 			for originStr, game of @games
 				game.stop()
+
+		gameStopped: (game) ->
+			delete @games[game.originStr]
 
 	PokegamesModule
