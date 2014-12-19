@@ -24,14 +24,14 @@ module.exports = (Module) ->
 					return
 
 				@games[originStr] = game = new GuessPokemonGame @, origin
-				game.start?()
+				game.start()
 
 			@addRoute 'pokegames stop', (origin, route) =>
 				return if not origin.channel?
 
 				originStr = @originString origin
 
-				@games[originStr].stop?()
+				@games[originStr].stop()
 				delete @games[originStr]
 
 			@on 'message', (bot, user, channel, message) =>
