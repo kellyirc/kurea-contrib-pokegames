@@ -4,5 +4,10 @@
   "version": "0.0.0",
   "description": "A module with Pokemon games for Kurea",
   "license": "MIT",
-  "dependencies": {}
+  "dependencies": {
+    "lodash": "^2.4.1",
+    "q": "^1.1.2",
+    "request": "^2.51.0",
+    "chance": "^0.7.0"
+  }
 }
