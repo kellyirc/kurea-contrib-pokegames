@@ -142,7 +142,7 @@ class exports.GuessPokemonGame extends exports.Game
 	dropHint: (difficulty = 'hard') ->
 		loop
 			hintType = @chance.weighted @hints[difficulty]...
-			continue if @hintLimits[hintType]-- <= 0
+			continue if @hintLimits[hintType]? and @hintLimits[hintType]-- <= 0
 
 			switch hintType
 				when 'type'
