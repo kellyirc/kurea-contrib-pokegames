@@ -1,7 +1,9 @@
-Chance = require 'chance'
-Q = require 'q'
-irc = require 'irc-colors'
 _ = require 'lodash'
+Q = require 'q'
+async = require 'async-q'
+
+Chance = require 'chance'
+irc = require 'irc-colors'
 
 PokemonDb = require './pokemondb'
 
@@ -69,8 +71,8 @@ class exports.GuessPokemonGame extends exports.Game
 	onStop: ->
 		@stopCurrentQuestion null, yes
 
-	assertNotStopped: ->
-		if @stopped
+	assertNotStopped: (pkmn) ->
+		if @stopped or (pkmn? and pkmn isnt @currentPkmn)
 			e = new Error 'Stopped.'
 			e.stopped = yes
 			throw e
@@ -103,36 +105,46 @@ class exports.GuessPokemonGame extends exports.Game
 			console.log 'The game may now commence.'
 
 			@say "#{irc.bold "Who's that Pokemon?!"} #{@redactPokemonName @currentPkmn, @desc.description}"
-			hintsGiven = 0
+
+			@hintsGiven = 0
 			@hintLimits =
 				'type': 1
 				'stat': 2
 				'move': 3
 				'species': 1
+				'partial name': 1
 
-			@timeout = setInterval =>
-				if hintsGiven++ < @hintCount
-					console.log diff = @getDifficulty hintsGiven
-					@dropHint diff
+		.then =>
+			pkmn = @currentPkmn
 
-				else
-					@stopCurrentQuestion null
+			Q.fcall =>
+				async.until (=> @hintsGiven >= @hintCount), =>
+					Q.delay @questionTimeout
+					.then =>
+						@assertNotStopped pkmn
 
-			, @questionTimeout
+						@dropHint @getDifficulty ++@hintsGiven
+
+			.delay @questionTimeout
+
+			.then =>
+				@assertNotStopped pkmn
+
+				@stopCurrentQuestion null
 
 		.fail (err) =>
 			if not err.stopped?
 				console.error err.stack
 				@say "Looks like there was an error! #{irc.red.bold err.toString()}"
 
-			else console.log 'Full stop.'
+			else console.log "Full stop."
 
 	dropHint: (difficulty = 'hard') ->
 		loop
 			hintType = @chance.weighted @hints[difficulty]...
 			continue if @hintLimits[hintType]-- <= 0
 
-			console.log "Dropping hint of type #{hintType}"
+			console.log "Dropping hint of type '#{hintType}' (difficulty: #{difficulty})"
 
 			switch hintType
 				when 'type'
@@ -192,7 +204,6 @@ class exports.GuessPokemonGame extends exports.Game
 
 				console.log 'No one answered.'
 
-		clearTimeout @timeout
 		@currentPkmn = null
 
 		if not halt
