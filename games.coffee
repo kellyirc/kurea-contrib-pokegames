@@ -137,14 +137,12 @@ class exports.GuessPokemonGame extends exports.Game
 				console.error err.stack
 				@say "Looks like there was an error! #{irc.red.bold err.toString()}"
 
-			else console.log "Full stop."
+			else console.log "Full stop. #{err}"
 
 	dropHint: (difficulty = 'hard') ->
 		loop
 			hintType = @chance.weighted @hints[difficulty]...
 			continue if @hintLimits[hintType]-- <= 0
-
-			console.log "Dropping hint of type '#{hintType}' (difficulty: #{difficulty})"
 
 			switch hintType
 				when 'type'
@@ -187,6 +185,8 @@ class exports.GuessPokemonGame extends exports.Game
 				when 'partial name'
 					name = @chance.partialString @currentPkmn.name
 					@say "Its name is #{irc.bold name}."
+
+			console.log "Dropped hint of type '#{hintType}' (difficulty: #{difficulty})"
 
 			break
 
