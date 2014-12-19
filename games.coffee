@@ -11,6 +11,19 @@ asArray = (collection) ->
 	.zip()
 	.value()
 
+Chance::partialString = (string) ->
+	percent = @floating min: 0.4, max: 0.7
+
+	len = string.length * percent // 1
+	restLen = string.length - len
+
+	string[...len] + (new Array restLen+1).join '_'
+
+fixPokemonName = (name) ->
+	return name if name.toLowerCase() in ['ho-oh', 'mr-mime']
+
+	name.replace /\-.+/g, ''
+
 class exports.Game
 	constructor: (@module, @origin) ->
 
@@ -26,9 +39,9 @@ class exports.Game
 class exports.GuessPokemonGame extends exports.Game
 	pokemonCount: 719
 
-	questionTimeout: 8 * 1000
+	questionTimeout: 12 * 1000
 	nextQuestionDelay: 3 * 1000
-	hintCount: 4
+	hintCount: 3
 
 	hints:
 		hard: asArray
@@ -37,9 +50,18 @@ class exports.GuessPokemonGame extends exports.Game
 			'move': 12
 			'species': 5
 
+		final: asArray
+			'partial name': 1
+
+	getDifficulty: (currentHint) ->
+		return 'final' if currentHint is @hintCount
+
+		'hard'
+
 	constructor: ->
 		super
 		@chance = new Chance
+		@stopped = no
 
 	onStart: ->
 		@startQuestion()
@@ -47,25 +69,51 @@ class exports.GuessPokemonGame extends exports.Game
 	onStop: ->
 		@stopCurrentQuestion null, yes
 
+	assertNotStopped: ->
+		if @stopped
+			e = new Error 'Stopped.'
+			e.stopped = yes
+			throw e
+
 	startQuestion: ->
-		@say 'Ready yourselves! Getting next Pokemon...'
+		Q.fcall =>
+			@assertNotStopped()
 
-		id = @chance.natural max: @pokemonCount-1
+			@say 'Ready yourselves! Getting next Pokemon...'
 
-		PokemonDb.pokemon {id}
+			id = @chance.natural max: @pokemonCount-1
+
+			console.log 'Fecthing Pokemon...'
+
+			PokemonDb.pokemon {id}
 		
 		.then (@currentPkmn) =>
+			@assertNotStopped()
+
+			@currentPkmn.name = fixPokemonName @currentPkmn.name
 			descObj = @chance.pick currentPkmn.descriptions
+
+			console.log 'Fetching Pokedex description of Pokemon...'
 
 			PokemonDb.get descObj.resource_uri
 
 		.then (@desc) =>
+			@assertNotStopped()
+
+			console.log 'The game may now commence.'
+
 			@say "#{irc.bold "Who's that Pokemon?!"} #{@redactPokemonName @currentPkmn, @desc.description}"
 			hintsGiven = 0
+			@hintLimits =
+				'type': 1
+				'stat': 2
+				'move': 3
+				'species': 1
 
 			@timeout = setInterval =>
 				if hintsGiven++ < @hintCount
-					@dropHint()
+					console.log diff = @getDifficulty hintsGiven
+					@dropHint diff
 
 				else
 					@stopCurrentQuestion null
@@ -73,11 +121,18 @@ class exports.GuessPokemonGame extends exports.Game
 			, @questionTimeout
 
 		.fail (err) =>
-			console.error err.stack
+			if not err.stopped?
+				console.error err.stack
+				@say "Looks like there was an error! #{irc.red.bold err.toString()}"
+
+			else console.log 'Full stop.'
 
 	dropHint: (difficulty = 'hard') ->
 		loop
 			hintType = @chance.weighted @hints[difficulty]...
+			continue if @hintLimits[hintType]-- <= 0
+
+			console.log "Dropping hint of type #{hintType}"
 
 			switch hintType
 				when 'type'
@@ -99,12 +154,16 @@ class exports.GuessPokemonGame extends exports.Game
 					@say "Its base #{irc.bold stats[stat]} is #{irc.bold @currentPkmn[stat]}."
 
 				when 'move'
+					continue if @currentPkmn.moves.length <= 0
+
 					move = @chance.pick @currentPkmn.moves
+
+					continue if move.learn_type in ['machine']
+
 					learnedFrom = switch move.learn_type
-						when 'machine' then "using a #{irc.bold 'TM/HM'}"
 						when 'tutor' then "from a #{irc.bold 'Tutor'}"
 						when 'level up' then "at #{irc.bold 'level ' + move.level}"
-						when 'egg move' then "as an #{irc.bold Egg Move}"
+						when 'egg move' then "as an #{irc.bold 'Egg Move'}"
 
 					@say "It can learn #{irc.bold move.name} #{learnedFrom}."
 
@@ -113,14 +172,20 @@ class exports.GuessPokemonGame extends exports.Game
 
 					@say "It is known as the #{irc.bold @currentPkmn.species}."
 
+				when 'partial name'
+					name = @chance.partialString @currentPkmn.name
+					@say "Its name is #{irc.bold name}."
+
 			break
 
 	stopCurrentQuestion: (answeredBy, halt = no) ->
+		console.log '***** Question stopped!'
+
 		if @currentPkmn?
 			if answeredBy?
 				@say "#{irc.bold answeredBy.user} got the right answer! It was #{irc.bold @currentPkmn.name}!"
 
-				console.log "Answered by #{answeredBy.name}"
+				console.log "Answered by #{answeredBy.user}"
 
 			else
 				@say "#{irc.red.bold "Time's up!"} It was #{irc.bold @currentPkmn.name}!"
@@ -137,6 +202,7 @@ class exports.GuessPokemonGame extends exports.Game
 		else
 			@say 'Game has been stopped.'
 			console.log 'HALTED!!!!!!!!!!!!!!'
+			@stopped = yes
 
 	redactPokemonName: (pkmn, text) ->
 		text.replace (new RegExp pkmn.name, 'ig'), '[REDACTED]'
@@ -144,5 +210,10 @@ class exports.GuessPokemonGame extends exports.Game
 	onMessage: (origin, message) ->
 		return if not @currentPkmn?
 
-		if message.toLowerCase() is @currentPkmn.name.toLowerCase()
+		normalize = (str) ->
+			str
+			.replace /[^\w]/g, ''
+			.toLowerCase()
+
+		if (normalize message) is (normalize @currentPkmn.name)
 			@stopCurrentQuestion origin
