@@ -14,7 +14,7 @@ asArray = (collection) ->
 	.value()
 
 Chance::partialString = (string) ->
-	percent = @floating min: 0.4, max: 0.7
+	percent = @floating min: 0.2, max: 0.45
 
 	len = string.length * percent // 1
 	restLen = string.length - len
