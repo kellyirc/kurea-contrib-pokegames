@@ -106,7 +106,7 @@ class exports.GuessPokemonGame extends exports.Game
 
 			@say irc.green 'Getting next Pokemon...'
 
-			id = @chance.natural max: @pokemonCount-1
+			id = @chance.pick [0...@pokemonCount]
 
 			PokemonDb.pokemon {id}
 
