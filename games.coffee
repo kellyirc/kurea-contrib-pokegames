@@ -109,7 +109,7 @@ class exports.GuessPokemonGame extends exports.Game
 			id = @chance.natural max: @pokemonCount-1
 
 			PokemonDb.pokemon {id}
-		
+
 		.then (@currentPkmn) =>
 			@assertNotStopped()
 
@@ -123,7 +123,10 @@ class exports.GuessPokemonGame extends exports.Game
 
 			console.log 'The game may now commence.'
 
-			@say "#{irc.bold "Who's that Pokemon?!"} #{@redactPokemonName @currentPkmn, @desc.description}"
+			@say "
+				#{irc.bold "Who's that Pokemon?!"}
+				#{@redactPokemonName @currentPkmn, @desc.description}
+			"
 
 			@hintsGiven = 0
 			@hintLimits =
@@ -214,7 +217,10 @@ class exports.GuessPokemonGame extends exports.Game
 	correctAnswer: (answeredBy) ->
 		if answeredBy?
 			console.log "Answered by #{answeredBy.user}"
-			@say "#{irc.bold answeredBy.user} got the right answer! It was #{irc.bold @currentPkmn.name}!"
+			@say "
+				#{irc.bold answeredBy.user} got the right answer!
+				It was #{irc.bold @currentPkmn.name}!
+			"
 
 		else
 			console.log 'No one answered.'
